@@ -57,6 +57,46 @@ def create_coche():
     # Devolvemos el coche recién creado y el código 201 Created
     return jsonify(new_coche), 201
 
+#Endpoint para eliminar un coche
+@app.route("/api/coches/<int:coche_id>", methods=['DELETE'])
+def delete_coche(coche_id):
+    coche_a_borrar = None
+    for coche in coches:
+        if coche["id"] == coche_id:
+            coche_a_borrar = coche
+            break
+    if not coche_a_borrar:
+        return jsonify({"error": "Coche no encontrado"}), 404
+    coches.remove(coche_a_borrar)
+    return jsonify({"mensaje": "Coche eliminado"}), 200
+
+@app.route("/api/coches/<int:coche_id>", methods=['PUT'])
+def update_coche(coche_id):
+    coche_a_actualizar = None
+    for coche in coches:
+        if coche["id"] == coche_id:
+            coche_a_actualizar = coche
+            break
+    if not coche_a_actualizar:
+        return jsonify({"error": "Coche no encontrado"}), 404
+
+    updated_data = request.get_json()
+   # Comprobamos si al menos una de las claves que nos envían es válida para actualizar
+    allowed_keys = {"marca", "modelo", "anio"}
+    if not updated_data:
+        return jsonify({"error": "No se enviaron datos"}), 400
+
+    invalid_keys = [k for k in updated_data if k not in allowed_keys]
+    if invalid_keys:
+        return jsonify({"error": f"Campos invalidos: {invalid_keys}"}), 400
+
+    # Actualizar solo los permitidos
+    for key in allowed_keys:
+        if key in updated_data:
+            coche_a_actualizar[key] = updated_data[key]
+
+    return jsonify({"mensaje": "Coche actualizado con exito ✔"}), 200
+
 
 # Esto es para poder ejecutar el servidor al correr el script
 if __name__ == '__main__':
