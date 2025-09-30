@@ -1,13 +1,15 @@
+import sqlite3
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 # Datos de ejemplo: una lista de coches
-coches = [
-    {"id": 1, "marca": "Audi", "modelo": "A4", "anio": 2020},
-    {"id": 2, "marca": "BMW", "modelo": "X3", "anio": 2021},
-    {"id": 3, "marca": "Mercedes", "modelo": "C-Class", "anio": 2019}
-]
 
+
+def get_db_connection():
+    """Función para conectarse a la base de datos."""
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row # Esto nos permite acceder a las columnas por nombre
+    return conn
 
 # Definimos la primera "ruta" o "endpoint"
 @app.route("/")
@@ -21,19 +23,32 @@ def marcas():
 
 
 @app.route("/api/coches", methods=['GET'])
-def obtener_coches():
-    return jsonify(coches)
+def get_coche():
+    conn = get_db_connection()
+    # Ejecutamos la consulta y obtenemos todos los resultados
+    coches_db = conn.execute('SELECT * FROM coches').fetchall()
+    conn.close()
+
+    # Convertimos los resultados de la BD a una lista de diccionarios
+    coches_lista = []
+    for coche in coches_db:
+        coches_lista.append(dict(coche))
+
+    return jsonify(coches_lista),200
+
 
 
 @app.route("/api/coches/<int:coche_id>", methods=['GET'])
-def get_coche(coche_id):
-    # Usamos un bucle para encontrar el coche por su ID
-    for coche in coches:
-        if coche["id"] == coche_id:
-            return jsonify(coche)
+def get_coche_filtro(coche_id):
+    conn = get_db_connection()
+    coche_db = conn.execute('SELECT * FROM coches WHERE id = ?',(coche_id,)).fetchone()
+    conn.close()
 
-    # Si no encontramos el coche, devolvemos un error 404
-    return jsonify({"error": "Coche no encontrado"}),
+    if coche_db is None:
+        return jsonify({'Error': 'Coche no encontrado'}), 404
+
+    return jsonify(dict(coche_db)),200
+
 
 
 # Endpoint para crear un nuevo coche
@@ -60,14 +75,16 @@ def create_coche():
 #Endpoint para eliminar un coche
 @app.route("/api/coches/<int:coche_id>", methods=['DELETE'])
 def delete_coche(coche_id):
-    coche_a_borrar = None
-    for coche in coches:
-        if coche["id"] == coche_id:
-            coche_a_borrar = coche
-            break
-    if not coche_a_borrar:
-        return jsonify({"error": "Coche no encontrado"}), 404
-    coches.remove(coche_a_borrar)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM coches WHERE id = ?',(coche_id,))
+    conn.commit()
+    conn.close()
+
+    #Comprobar si se ha borrado
+    if cur.rowcount == 0:
+        return jsonify({'Error':'Coche no encontrado para borrar'}),404
+    
     return jsonify({"mensaje": "Coche eliminado"}), 200
 
 @app.route("/api/coches/<int:coche_id>", methods=['PUT'])
