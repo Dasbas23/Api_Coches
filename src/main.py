@@ -1,120 +1,186 @@
+# -*- coding: utf-8 -*-
+"""
+API REST para gestionar una colección de coches.
+
+Este script utiliza Flask para crear una API que permite realizar operaciones
+CRUD (Crear, Leer, Actualizar, Borrar) sobre una base de datos SQLite
+que almacena información de coches.
+"""
 import sqlite3
 from flask import Flask, jsonify, request
 
+# Inicialización de la aplicación Flask
 app = Flask(__name__)
-# Datos de ejemplo: una lista de coches
 
 
 def get_db_connection():
-    """Función para conectarse a la base de datos."""
+    """
+    Establece una conexión con la base de datos SQLite.
+
+    La conexión está configurada para devolver filas que se pueden acceder
+    por nombre de columna (como un diccionario).
+
+    :return: Objeto de conexión a la base de datos.
+    """
     conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row # Esto nos permite acceder a las columnas por nombre
+    # Permite acceder a las columnas por su nombre.
+    conn.row_factory = sqlite3.Row
     return conn
 
-# Definimos la primera "ruta" o "endpoint"
+
+# --- Rutas de la API ---
+
 @app.route("/")
 def hola_mundo():
+    """Ruta de bienvenida a la API."""
     return "Bienvenido a mi API de Coches"
 
 
 @app.route("/marcas")
 def marcas():
+    """Ruta de ejemplo estática."""
     return "Aqui irán las marcas de coches"
 
 
 @app.route("/api/coches", methods=['GET'])
-def get_coche():
+def get_all_coches():
+    """
+    Obtiene la lista completa de todos los coches de la base de datos.
+
+    :return: Respuesta JSON con una lista de todos los coches y código de estado 200 (OK).
+    """
     conn = get_db_connection()
-    # Ejecutamos la consulta y obtenemos todos los resultados
     coches_db = conn.execute('SELECT * FROM coches').fetchall()
     conn.close()
 
-    # Convertimos los resultados de la BD a una lista de diccionarios
-    coches_lista = []
-    for coche in coches_db:
-        coches_lista.append(dict(coche))
+    # Convierte las filas de la base de datos (sqlite3.Row) a una lista de diccionarios.
+    coches_lista = [dict(coche) for coche in coches_db]
 
-    return jsonify(coches_lista),200
-
+    return jsonify(coches_lista), 200
 
 
 @app.route("/api/coches/<int:coche_id>", methods=['GET'])
-def get_coche_filtro(coche_id):
+def get_coche_by_id(coche_id):
+    """
+    Obtiene un único coche por su ID.
+
+    :param coche_id: El ID del coche a buscar.
+    :return: Respuesta JSON con los datos del coche y código 200 (OK),
+             o un error 404 (Not Found) si el coche no existe.
+    """
     conn = get_db_connection()
-    coche_db = conn.execute('SELECT * FROM coches WHERE id = ?',(coche_id,)).fetchone()
+    # Se usa fetchone() porque esperamos un único resultado.
+    coche_db = conn.execute('SELECT * FROM coches WHERE id = ?', (coche_id,)).fetchone()
     conn.close()
 
     if coche_db is None:
         return jsonify({'Error': 'Coche no encontrado'}), 404
 
-    return jsonify(dict(coche_db)),200
+    return jsonify(dict(coche_db)), 200
 
 
-
-# Endpoint para crear un nuevo coche
 @app.route("/api/coches", methods=['POST'])
 def create_coche():
-    # Objeto JSON enviado en la solicitud
-    new_coche_data = request.get_json()
+    """
+    Crea un nuevo coche en la base de datos.
 
-    # Validamos que el objeto tenga los campos necesarios
-    if not new_coche_data or not "marca" in new_coche_data or not "modelo" in new_coche_data or not "anio" in new_coche_data:
-        return jsonify({"error": "Datos incompletos"}), 400  # Bad Request
+    Espera un cuerpo de solicitud JSON con 'marca', 'modelo' y 'anio'.
 
-    # Creamos nuevo coche
-    new_coche = {
-        "id": coches[-1]["id"] + 1 if coches else 1,  # Asignamos un nuevo ID
-        "marca": new_coche_data["marca"],
-        "modelo": new_coche_data["modelo"],
-        "anio": new_coche_data.get("anio", "Desconocido")  # Valor por defecto si no se proporciona
-    }
-    coches.append(new_coche)  # Añadimos el nuevo coche a la lista
-    # Devolvemos el coche recién creado y el código 201 Created
-    return jsonify(new_coche), 201
+    :return: Respuesta JSON con un mensaje de éxito, el ID del nuevo coche y código 201 (Created),
+             o un error 400 (Bad Request) si los datos son incompletos.
+    """
+    datos_nuevos = request.get_json()
 
-#Endpoint para eliminar un coche
-@app.route("/api/coches/<int:coche_id>", methods=['DELETE'])
-def delete_coche(coche_id):
+    # Validación de datos de entrada.
+    if not datos_nuevos or "marca" not in datos_nuevos or "modelo" not in datos_nuevos or "anio" not in datos_nuevos:
+        return jsonify({"Error": "Datos incompletos. Se requiere marca, modelo y anio."}), 400
+
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('DELETE FROM coches WHERE id = ?',(coche_id,))
+    cur.execute('INSERT INTO coches(marca, modelo, anio) VALUES (?, ?, ?)',
+                (datos_nuevos['marca'], datos_nuevos['modelo'], datos_nuevos['anio']))
+
+    # Obtenemos el ID del último registro insertado.
+    last_id = cur.lastrowid
+
     conn.commit()
     conn.close()
 
-    #Comprobar si se ha borrado
+    return jsonify({'mensaje': 'Se ha agregado el nuevo coche exitosamente', 'id': last_id}), 201
+
+
+@app.route("/api/coches/<int:coche_id>", methods=['DELETE'])
+def delete_coche(coche_id):
+    """
+    Elimina un coche de la base de datos por su ID.
+
+    :param coche_id: El ID del coche a eliminar.
+    :return: Respuesta JSON con un mensaje de éxito y código 200 (OK),
+             o un error 404 (Not Found) si el coche no existía.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM coches WHERE id = ?', (coche_id,))
+    conn.commit()
+
+    # Comprobamos si la operación afectó a alguna fila.
     if cur.rowcount == 0:
-        return jsonify({'Error':'Coche no encontrado para borrar'}),404
-    
-    return jsonify({"mensaje": "Coche eliminado"}), 200
+        conn.close()
+        return jsonify({'Error': 'Coche no encontrado, no se pudo eliminar'}), 404
+
+    conn.close()
+    return jsonify({"mensaje": "Coche eliminado exitosamente"}), 200
+
 
 @app.route("/api/coches/<int:coche_id>", methods=['PUT'])
 def update_coche(coche_id):
-    coche_a_actualizar = None
-    for coche in coches:
-        if coche["id"] == coche_id:
-            coche_a_actualizar = coche
-            break
-    if not coche_a_actualizar:
-        return jsonify({"error": "Coche no encontrado"}), 404
+    """
+    Actualiza los datos de un coche existente por su ID.
 
-    updated_data = request.get_json()
-   # Comprobamos si al menos una de las claves que nos envían es válida para actualizar
-    allowed_keys = {"marca", "modelo", "anio"}
-    if not updated_data:
-        return jsonify({"error": "No se enviaron datos"}), 400
+    Permite actualizaciones parciales. El cuerpo de la solicitud JSON puede
+    contener uno o más campos a actualizar ('marca', 'modelo', 'anio').
 
-    invalid_keys = [k for k in updated_data if k not in allowed_keys]
-    if invalid_keys:
-        return jsonify({"error": f"Campos invalidos: {invalid_keys}"}), 400
+    :param coche_id: El ID del coche a actualizar.
+    :return: Respuesta JSON con un mensaje de éxito y código 200 (OK),
+             o un error 404 (Not Found) si el coche no existe,
+             o un error 400 (Bad Request) si se envían campos inválidos.
+    """
+    datos_update = request.get_json()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    # Actualizar solo los permitidos
-    for key in allowed_keys:
-        if key in updated_data:
-            coche_a_actualizar[key] = updated_data[key]
+    # 1. BUSCAR el recurso. Es lo PRIMERO que hacemos.
+    coche_actual = cur.execute('SELECT * FROM coches WHERE id = ?', (coche_id,)).fetchone()
 
-    return jsonify({"mensaje": "Coche actualizado con exito ✔"}), 200
+    # 2. VALIDAR si el recurso existe.
+    if coche_actual is None:
+        conn.close()
+        return jsonify({'Error': 'Coche no encontrado'}), 404
+
+    # 3. VALIDAR los datos de entrada (las claves del JSON).
+    cur.execute("SELECT * FROM coches LIMIT 1")
+    campos_disponibles = [description[0] for description in cur.description]
+    for key in datos_update.keys():
+        if key not in campos_disponibles:
+            conn.close()
+            return jsonify({'Error': f"El campo '{key}' es inválido"}), 400
+
+    # 4. FUSIONAR los datos viejos con los nuevos para permitir actualizaciones parciales.
+    marca_final = datos_update.get('marca', coche_actual['marca'])
+    modelo_final = datos_update.get('modelo', coche_actual['modelo'])
+    anio_final = datos_update.get('anio', coche_actual['anio'])
+
+    # 5. EJECUTAR la actualización.
+    cur.execute('UPDATE coches SET marca = ?, modelo = ?, anio = ? WHERE id = ?',
+                (marca_final, modelo_final, anio_final, coche_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'mensaje': 'Se ha actualizado el coche exitosamente', 'id': coche_id}), 200
 
 
-# Esto es para poder ejecutar el servidor al correr el script
+# --- Punto de entrada para ejecutar la aplicación ---
 if __name__ == '__main__':
+    # El modo debug se activa para que el servidor se reinicie con cada cambio.
+    # No usar en producción.!!!!
     app.run(debug=True)
